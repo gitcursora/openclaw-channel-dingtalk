@@ -6,8 +6,20 @@ import type {
 } from "openclaw/plugin-sdk";
 import * as pluginSdk from "openclaw/plugin-sdk";
 import { getAccessToken } from "./auth";
-import { createAICard, streamAICard, finishAICard } from "./card-service";
-import { getConfig, isConfigured, mergeAccountWithDefaults, resolveRelativePath, stripTargetPrefix } from "./config";
+import {
+  createAICard,
+  streamAICard,
+  finishAICard,
+  finalizeActiveCardsForAccount,
+  recoverPendingCardsForAccount,
+} from "./card-service";
+import {
+  getConfig,
+  isConfigured,
+  mergeAccountWithDefaults,
+  resolveRelativePath,
+  stripTargetPrefix,
+} from "./config";
 import { DingTalkConfigSchema } from "./config-schema.js";
 import { ConnectionManager } from "./connection-manager";
 import { isMessageProcessed, markMessageProcessed } from "./dedup";
@@ -16,6 +28,7 @@ import { getLogger } from "./logger-context";
 import { prepareMediaInput, resolveOutboundMediaType } from "./media-utils";
 import { dingtalkOnboardingAdapter } from "./onboarding.js";
 import { resolveOriginalPeerId } from "./peer-id-registry";
+import { getDingTalkRuntime } from "./runtime";
 import { sendMessage, sendProactiveMedia, sendBySession, uploadMedia } from "./send-service";
 import type {
   DingTalkInboundMessage,
@@ -441,10 +454,36 @@ export const dingtalkPlugin: DingTalkChannelPlugin = {
       if (!config.clientId || !config.clientSecret) {
         throw new Error("DingTalk clientId and clientSecret are required");
       }
+      let accountStorePath: string | undefined;
+      try {
+        const rt = getDingTalkRuntime();
+        accountStorePath = rt.channel.session.resolveStorePath(cfg.session?.store, {
+          agentId: account.accountId,
+        });
+      } catch {
+        accountStorePath = undefined;
+      }
 
       ctx.log?.info?.(`[${account.accountId}] Initializing DingTalk Stream client...`);
 
       cleanupOrphanedTempFiles(ctx.log);
+      try {
+        const recovered = await recoverPendingCardsForAccount(
+          config,
+          account.accountId,
+          accountStorePath,
+          ctx.log,
+        );
+        if (recovered > 0) {
+          ctx.log?.info?.(
+            `[${account.accountId}] Recovered and finalized ${recovered} unfinished card(s) from previous runtime`,
+          );
+        }
+      } catch (err: any) {
+        ctx.log?.warn?.(
+          `[${account.accountId}] Failed to recover unfinished cards: ${err.message}`,
+        );
+      }
 
       const useConnectionManager = config.useConnectionManager ?? true;
 
@@ -568,6 +607,17 @@ export const dingtalkPlugin: DingTalkChannelPlugin = {
         }
         stopped = true;
         ctx.log?.info?.(`[${account.accountId}] Stopping DingTalk Stream client...`);
+        void finalizeActiveCardsForAccount(
+          config,
+          account.accountId,
+          "⚠️ 服务正在重启，当前回复已中断。请重新发送你的问题。",
+          accountStorePath,
+          ctx.log,
+        ).catch((err: any) => {
+          ctx.log?.debug?.(
+            `[${account.accountId}] Failed to finalize active cards during stop: ${err.message}`,
+          );
+        });
         if (useConnectionManager) {
           connectionManager?.stop();
         } else {

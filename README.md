@@ -505,6 +505,13 @@ openclaw gateway restart
 3. 自动状态管理（PROCESSING → INPUTING → FINISHED）
 4. 更稳定的流式体验，无需手动节流
 
+**AI Card 持久化与恢复机制（v3.2.x）：**
+
+- 仅对**会话内流式卡片（inbound）**记录 pending 状态，用于进程重启后的自动收尾
+- pending 文件路径基于 OpenClaw session `storePath` 目录推导：`path.dirname(storePath)/dingtalk-active-cards.json`
+- **proactive 卡片**采用 createAndDeliver 后立即 finalize 的短路径，默认**不写入** pending 状态文件
+- 插件启动时会尝试恢复并 finalize 未完成的 inbound 卡片；停止/重启时会 best-effort finalize 当前 active 卡片
+
 ### AI 思考过程与工具执行显示（AI Card 模式）
 
 当 `messageType` 为 `card` 时，插件可以在卡片中实时展示 AI 的推理过程（🤔 思考中）和工具调用结果（🛠️ 工具执行）。这两项功能通过**对话级命令**控制，无需修改配置文件：
