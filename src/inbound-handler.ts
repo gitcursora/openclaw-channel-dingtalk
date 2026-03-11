@@ -28,6 +28,7 @@ import {
   parseLearnCommand,
 } from "./learning-command-service";
 import { extractMessageContent } from "./message-utils";
+import { prepareMediaInput, resolveOutboundMediaType } from "./media-utils";
 import { registerPeerId } from "./peer-id-registry";
 import {
   clearProactiveRiskObservationsForTest,
@@ -39,7 +40,7 @@ import {
   resolveQuotedMessageById,
 } from "./quote-journal";
 import { getDingTalkRuntime } from "./runtime";
-import { sendBySession, sendMessage } from "./send-service";
+import { sendBySession, sendMessage, sendProactiveMedia } from "./send-service";
 import { clearSessionPeerOverride, getSessionPeerOverride, setSessionPeerOverride } from "./session-peer-store";
 import { resolveDingTalkSessionPeer } from "./session-routing";
 import type { DingTalkConfig, HandleDingTalkMessageParams, MediaFile } from "./types";
@@ -1304,8 +1305,18 @@ export async function handleDingTalkMessage(params: HandleDingTalkMessageParams)
           responsePrefix: "",
           deliver: async (payload: ReplyStreamPayload, info?: ReplyChunkInfo) => {
             try {
+              const richPayload = payload as typeof payload & {
+                mediaUrl?: string;
+                mediaUrls?: string[];
+              };
               const textToSend = payload.text;
-              if (!textToSend) {
+              const mediaUrls = Array.isArray(richPayload.mediaUrls)
+                ? richPayload.mediaUrls.filter((entry: unknown) => typeof entry === "string" && entry.trim())
+                : richPayload.mediaUrl && typeof richPayload.mediaUrl === "string" && richPayload.mediaUrl.trim()
+                  ? [richPayload.mediaUrl]
+                  : [];
+
+              if ((typeof textToSend !== "string" || textToSend.length === 0) && mediaUrls.length === 0) {
                 return;
               }
 
@@ -1314,6 +1325,46 @@ export async function handleDingTalkMessage(params: HandleDingTalkMessageParams)
                 await controller!.flush();
                 await controller!.waitForInFlight();
                 controller!.stop();
+                // Send media attachments before finalizing the card
+                if (mediaUrls.length > 0) {
+                  for (const rawMediaUrl of mediaUrls) {
+                    const preparedMedia = await prepareMediaInput(
+                      rawMediaUrl,
+                      log,
+                      dingtalkConfig.mediaUrlAllowlist,
+                    );
+                    try {
+                      const actualMediaPath = preparedMedia.path;
+                      const mediaType = resolveOutboundMediaType({
+                        mediaPath: actualMediaPath,
+                        asVoice: false,
+                      });
+                      if (sessionWebhook) {
+                        await sendBySession(dingtalkConfig, sessionWebhook, "", {
+                          mediaPath: actualMediaPath,
+                          mediaType,
+                          log,
+                        });
+                      } else {
+                        const sendResult = await sendProactiveMedia(
+                          dingtalkConfig,
+                          to,
+                          actualMediaPath,
+                          mediaType,
+                          {
+                            accountId,
+                            log,
+                          },
+                        );
+                        if (!sendResult.ok) {
+                          throw new Error(sendResult.error || "Media reply send failed");
+                        }
+                      }
+                    } finally {
+                      await preparedMedia.cleanup?.();
+                    }
+                  }
+                }
                 if (!isCardInTerminalState(currentAICard.state) && !controller!.isFailed()) {
                   try {
                     await finishAICard(currentAICard, textToSend, log);
@@ -1369,8 +1420,52 @@ export async function handleDingTalkMessage(params: HandleDingTalkMessageParams)
                 return;
               }
 
+              // ---- media delivery (all modes) ----
+              if (mediaUrls.length > 0) {
+                for (const rawMediaUrl of mediaUrls) {
+                  const preparedMedia = await prepareMediaInput(
+                    rawMediaUrl,
+                    log,
+                    dingtalkConfig.mediaUrlAllowlist,
+                  );
+                  try {
+                    const actualMediaPath = preparedMedia.path;
+                    const mediaType = resolveOutboundMediaType({
+                      mediaPath: actualMediaPath,
+                      asVoice: false,
+                    });
+                    if (sessionWebhook) {
+                      await sendBySession(dingtalkConfig, sessionWebhook, "", {
+                        mediaPath: actualMediaPath,
+                        mediaType,
+                        log,
+                      });
+                    } else {
+                      const sendResult = await sendProactiveMedia(
+                        dingtalkConfig,
+                        to,
+                        actualMediaPath,
+                        mediaType,
+                        {
+                          accountId,
+                          log,
+                        },
+                      );
+                      if (!sendResult.ok) {
+                        throw new Error(sendResult.error || "Media reply send failed");
+                      }
+                    }
+                  } finally {
+                    await preparedMedia.cleanup?.();
+                  }
+                }
+              }
+
               // ---- non-card mode (markdown/text) ----
               if (!useCardMode || !currentAICard) {
+                if (typeof textToSend !== "string" || textToSend.length === 0) {
+                  return;
+                }
                 const sendResult = await sendMessage(dingtalkConfig, to, textToSend, {
                   sessionWebhook,
                   atUserId: !isDirect ? senderId : null,
