@@ -1,9 +1,18 @@
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import { getConfig, isConfigured, mergeAccountWithDefaults, resolveRelativePath, resolveUserPath } from '../../src/config';
 
 describe('config advanced', () => {
+    const originalPlatform = process.platform;
+
+    afterEach(() => {
+        Object.defineProperty(process, 'platform', {
+            configurable: true,
+            value: originalPlatform,
+        });
+    });
+
     it('getConfig resolves account override and top-level fallback', () => {
         const cfg = {
             channels: {
@@ -113,4 +122,61 @@ describe('config advanced', () => {
         expect(resolveUserPath('..\\tmp\\x')).toBe(resolveRelativePath('..\\tmp\\x'));
     });
 
+    it('mergeAccountWithDefaults keeps channel defaults and account overrides', () => {
+        const merged = mergeAccountWithDefaults(
+            {
+                clientId: 'top_id',
+                clientSecret: 'top_secret',
+                dmPolicy: 'allowlist',
+                messageType: 'card',
+                accounts: {
+                    bot: {
+                        clientId: 'ignored',
+                        clientSecret: 'ignored',
+                    },
+                },
+            } as any,
+            {
+                clientId: 'bot_id',
+                clientSecret: 'bot_secret',
+                messageType: 'markdown',
+            } as any,
+        );
+
+        expect(merged.clientId).toBe('bot_id');
+        expect(merged.clientSecret).toBe('bot_secret');
+        expect(merged.dmPolicy).toBe('allowlist');
+        expect(merged.messageType).toBe('markdown');
+        expect((merged as any).accounts).toBeUndefined();
+    });
+
+    it('recovers Windows root-relative workspace paths only on win32', () => {
+        Object.defineProperty(process, 'platform', {
+            configurable: true,
+            value: 'win32',
+        });
+
+        const result = resolveRelativePath('Users\\username\\.openclaw\\workspace\\file.xlsx');
+        expect(result).toBe('\\Users\\username\\.openclaw\\workspace\\file.xlsx');
+    });
+
+    it('does not treat dotted relative paths as Windows absolute paths', () => {
+        Object.defineProperty(process, 'platform', {
+            configurable: true,
+            value: 'win32',
+        });
+
+        const result = resolveRelativePath('node_modules/.bin/vitest');
+        expect(result).toBe(path.resolve(process.cwd(), 'node_modules', '.bin', 'vitest'));
+    });
+
+    it('keeps missing-leading-slash Windows-like paths relative on non-Windows', () => {
+        Object.defineProperty(process, 'platform', {
+            configurable: true,
+            value: 'darwin',
+        });
+
+        const result = resolveRelativePath('Users\\username\\.openclaw\\workspace\\file.xlsx');
+        expect(result).toBe(path.resolve(process.cwd(), 'Users', 'username', '.openclaw', 'workspace', 'file.xlsx'));
+    });
 });
