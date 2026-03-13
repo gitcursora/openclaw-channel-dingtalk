@@ -919,6 +919,125 @@ node scripts/feedback-learning-debug.mjs --storePath /path/to/session-store.json
 
 > **注意**：`cardTemplateKey` 应与您的卡片模板中定义的字段名称一致。默认值为 `'content'`，适用于 DingTalk 官方 AI 卡片模板。如果您使用自定义模板，请根据模板定义的字段名称进行配置。
 
+## 多 Agent 与多个机器人绑定
+
+有关 OpenClaw 的多 Agent 概念，阅读官方文档：[多 Agent 概念](https://docs.openclaw.ai/concepts/multi-agent)。
+
+要将一个 OpenClaw 实例同时接入多个钉钉机器人，并把不同机器人的消息分别交给不同的 OpenClaw agent 处理，则需要在 `~/.openclaw/openclaw.json` 中同时配置以下三部分：
+
+1. `agents.list`：定义 OpenClaw Agent
+2. `bindings`：定义 Channel 与 OpenClaw Agent 消息的路由规则
+3. `channels.dingtalk.accounts`：定义多个机器人
+
+### 示例
+
+下面这个例子表示：
+
+- 钉钉机器人 `bot_1` 收到的消息，路由到 OpenClaw 的 `main` agent
+- 钉钉机器人 `bot_2` 收到的消息，路由到 OpenClaw 的 `growth-agent` agent
+
+```json5
+{
+  "agents": {
+    "list": [
+      {
+        // OpenClaw 默认 agent
+        "id": "main"
+      },
+      {
+        // OpenClaw agent 的唯一 ID
+        // 后面的 bindings[].agentId 需要引用这里的值
+        "id": "growth-agent",
+        "name": "growth-agent",
+        // 每个 agent 建议使用独立 workspace
+        "workspace": "/Users/yourname/.openclaw/agents/growth-agent/workspace",
+        // 建议同时使用独立 agentDir
+        "agentDir": "/Users/yourname/.openclaw/agents/growth-agent/agent",
+        "model": "codex/gpt-5.3-codex"
+      }
+    ]
+  },
+  "bindings": [
+    {
+      "type": "route",
+      // 路由目标：这里写 OpenClaw agent 的 ID
+      "agentId": "main",
+      "match": {
+        // 这里固定写 dingtalk
+        "channel": "dingtalk",
+        // 这里必须与 channels.dingtalk.accounts 下的 key 完全一致
+        "accountId": "bot_1"
+      }
+    },
+    {
+      "type": "route",
+      // 这里把 bot_2 路由到 growth-agent
+      "agentId": "growth-agent",
+      "match": {
+        "channel": "dingtalk",
+        // 必须与 channels.dingtalk.accounts.bot_2 对应
+        "accountId": "bot_2"
+      }
+    }
+  ],
+  "channels": {
+    "dingtalk": {
+      "enabled": true,
+      "accounts": {
+        // 这里的 key 就是 accountId，会被 bindings.match.accountId 匹配
+        "bot_1": {
+          "clientId": "your-client-id-1",
+          "clientSecret": "your-client-secret-1",
+          "robotCode": "your-robot-code-1",
+          "corpId": "your-corp-id",
+          // 这是钉钉应用自己的 Agent ID，不是 OpenClaw 的 agentId
+          "agentId": "your-dingtalk-agent-id-1",
+          "dmPolicy": "open",
+          "groupPolicy": "open",
+          // 这里使用 card 消息类型作为示例
+          "messageType": "card",
+          "cardTemplateId": "your-card-template-id.schema",
+          "cardTemplateKey": "content",
+          "maxReconnectCycles": 10,
+          "allowFrom": ["*"]
+        },
+        // 另一个独立的钉钉机器人账号
+        "bot_2": {
+          "clientId": "your-client-id-2",
+          "clientSecret": "your-client-secret-2",
+          "robotCode": "your-robot-code-2",
+          "corpId": "your-corp-id",
+          // 同样是钉钉应用自己的 Agent ID
+          "agentId": "your-dingtalk-agent-id-2",
+          "dmPolicy": "open",
+          "groupPolicy": "open",
+          // 这里使用 markdown 消息类型作为示例
+          "messageType": "markdown",
+          "allowFrom": ["*"]
+        }
+      }
+    }
+  }
+}
+```
+
+### 最佳实践
+- 为每个 agent 配置不同的 `workspace`，不要让两个 agent 共用同一个 `workspace`
+> **说明：**
+> 多 Agent 场景下，`workspace` 不只是“放文件的目录”，还会承载会话相关文件、生成结果以及本地运行状态。
+> 如果两个 agent 共用同一个 `workspace`，实际运行时很容易出现状态串扰、文件覆盖、上下文混用等问题。
+
+### 检查清单
+
+- `agents.list` 中已经定义了目标 agent
+- `bindings[].agentId` 能在 `agents.list[].id` 中找到对应项
+- `bindings[].match.accountId` 与 `channels.dingtalk.accounts` 的 key 完全一致
+- 每个 `accounts.<accountId>` 都填写了正确的钉钉凭证
+- 每个 agent 都使用了独立的 `workspace`
+- 修改配置后已执行 `openclaw gateway restart`
+
+如果账号名写错，例如 `bindings.match.accountId = "bot2"`，但 `channels.dingtalk.accounts` 中实际写的是 `bot_2`，则该机器人消息不会按预期路由到目标 agent。
+
 ## 使用示例
 
 配置完成后，直接在钉钉中：
