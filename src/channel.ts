@@ -28,7 +28,7 @@ import { handleDingTalkMessage } from "./inbound-handler";
 import { getLogger } from "./logger-context";
 import { prepareMediaInput, resolveOutboundMediaType } from "./media-utils";
 import { dingtalkOnboardingAdapter } from "./onboarding.js";
-import { resolveOriginalPeerId } from "./peer-id-registry";
+import { resolveOriginalPeerId, preloadPeerIdsFromSessions } from "./peer-id-registry";
 import { getDingTalkRuntime } from "./runtime";
 import {
   isFeedbackLearningAutoApplyEnabled,
@@ -580,6 +580,12 @@ export const dingtalkPlugin: DingTalkChannelPlugin = {
       }
 
       ctx.log?.info?.(`[${account.accountId}] Initializing DingTalk Stream client...`);
+
+      // Preload known peer IDs from sessions so outbound delivery (e.g. cron
+      // jobs that fire immediately after startup) can resolve the original
+      // case-sensitive conversationId before any inbound message has arrived.
+      preloadPeerIdsFromSessions();
+      ctx.log?.debug?.(`[${account.accountId}] Peer ID registry preloaded from sessions`);
 
       cleanupOrphanedTempFiles(ctx.log);
       try {
