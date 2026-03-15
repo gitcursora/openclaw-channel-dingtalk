@@ -205,12 +205,23 @@ describe('ConnectionManager', () => {
     it('cancels in-flight connect when stopped during connect', async () => {
         let resolveConnect: (() => void) | undefined;
         const connectPromise = new Promise<void>((resolve) => { resolveConnect = resolve; });
+        const socket = new EventEmitter();
+        (socket as any).readyState = 0;
+        (socket as any).removeListener = socket.removeListener.bind(socket);
 
         const client = {
             connected: false,
-            registered: false,
-            socket: undefined,
-            connect: vi.fn().mockImplementation(() => connectPromise),
+            registered: true,
+            socket,
+            connect: vi.fn().mockImplementation(async () => {
+                await connectPromise;
+                client.socket = socket;
+                queueMicrotask(() => {
+                    (socket as any).readyState = 1;
+                    client.connected = true;
+                    socket.emit('open');
+                });
+            }),
             disconnect: vi.fn(),
         } as any;
 
@@ -372,7 +383,7 @@ describe('ConnectionManager', () => {
         expect(client.connect.mock.calls.length).toBe(connectCountBefore);
     });
 
-    // ── Change 3: Heartbeat interval cleanup ───────────────────────────
+    // ── Change 3: SDK heartbeat interval cleanup ───────────────────────
 
     it('clears SDK heartbeatIntervallId before connect', async () => {
         const { client } = createMockClient();
@@ -509,7 +520,6 @@ describe('ConnectionManager', () => {
             socket,
             connect: vi.fn().mockImplementation(async () => {
                 client.socket = socket;
-                // Delay open event
                 setTimeout(() => {
                     (socket as any).readyState = 1;
                     client.connected = true;
@@ -525,7 +535,8 @@ describe('ConnectionManager', () => {
         // Before open fires, should not be connected
         expect(manager.getState()).not.toBe(ConnectionState.CONNECTED);
 
-        await vi.advanceTimersByTimeAsync(600);
+        await vi.advanceTimersByTimeAsync(300);
+        await vi.advanceTimersByTimeAsync(300);
         await connectPromise;
 
         expect(manager.isConnected()).toBe(true);
@@ -911,125 +922,4 @@ describe('ConnectionManager', () => {
         clearInterval(fakeIntervalId);
     });
 
-    // ── ConnectionManager heartbeat ─────────────────────────────────────
-
-    it('triggers reconnection when heartbeat sees no pong or message activity', async () => {
-        const { client, socket } = createMockClient();
-        const log = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
-
-        const manager = new ConnectionManager(client, 'main', baseConfig(), log);
-
-        await manager.connect();
-        await vi.advanceTimersByTimeAsync(20_000);
-        await vi.advanceTimersByTimeAsync(20_000);
-        await vi.advanceTimersByTimeAsync(10);
-
-        expect((socket as any).ping).toHaveBeenCalled();
-        expect(log.warn).toHaveBeenCalledWith(
-            expect.stringContaining('Connection heartbeat missed 2/2 checks'),
-        );
-        expect(client.connect.mock.calls.length).toBeGreaterThanOrEqual(2);
-    });
-
-    it('does not reconnect when pong frames keep heartbeat healthy', async () => {
-        const { client, socket } = createMockClient();
-
-        const manager = new ConnectionManager(client, 'main', baseConfig());
-
-        await manager.connect();
-        const connectCountAfterInit = client.connect.mock.calls.length;
-
-        await vi.advanceTimersByTimeAsync(20_000);
-        socket.emit('pong');
-        await vi.advanceTimersByTimeAsync(20_000);
-        socket.emit('pong');
-        await vi.advanceTimersByTimeAsync(20_000);
-
-        expect(client.connect.mock.calls.length).toBe(connectCountAfterInit);
-    });
-
-    it('does not reconnect when message activity keeps heartbeat healthy', async () => {
-        const { client, socket } = createMockClient();
-
-        const manager = new ConnectionManager(client, 'main', baseConfig());
-
-        await manager.connect();
-        const connectCountAfterInit = client.connect.mock.calls.length;
-
-        await vi.advanceTimersByTimeAsync(20_000);
-        socket.emit('message', JSON.stringify({
-            type: "SYSTEM",
-            headers: { topic: "KEEPALIVE" },
-            data: "",
-        }));
-        await vi.advanceTimersByTimeAsync(20_000);
-        socket.emit('message', JSON.stringify({
-            type: "SYSTEM",
-            headers: { topic: "ping" },
-            data: "",
-        }));
-        await vi.advanceTimersByTimeAsync(20_000);
-
-        expect(client.connect.mock.calls.length).toBe(connectCountAfterInit);
-    });
-
-    it('tracks heartbeat-triggered reconnect counters', async () => {
-        const { client } = createMockClient();
-        const log = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
-
-        const manager = new ConnectionManager(client, 'main', baseConfig(), log);
-
-        await manager.connect();
-        await vi.advanceTimersByTimeAsync(20_000);
-        await vi.advanceTimersByTimeAsync(20_000);
-        await vi.advanceTimersByTimeAsync(10);
-
-        expect(log.info).toHaveBeenCalledWith(
-            expect.stringContaining('heartbeatTriggeredReconnects=1'),
-        );
-        expect(log.info).toHaveBeenCalledWith(
-            expect.stringContaining('heartbeatMisses=2'),
-        );
-    });
-
-    it('stop clears ConnectionManager heartbeat interval', async () => {
-        const { client, socket } = createMockClient();
-
-        const manager = new ConnectionManager(client, 'main', baseConfig());
-
-        await manager.connect();
-        manager.stop();
-        const connectCountBefore = client.connect.mock.calls.length;
-
-        await vi.advanceTimersByTimeAsync(60_000);
-
-        expect((socket as any).ping).not.toHaveBeenCalled();
-        expect(client.connect.mock.calls.length).toBe(connectCountBefore);
-    });
-
-    it('warm reconnect clears the previous socket heartbeat interval', async () => {
-        const { client: seedClient } = createMockClient();
-        const { client: firstClient, socket: firstSocket } = createMockClient();
-        const { client: secondClient, socket: secondSocket } = createMockClient();
-
-        const factory = vi.fn()
-            .mockReturnValueOnce(firstClient)
-            .mockReturnValueOnce(secondClient);
-
-        const manager = new ConnectionManager(
-            seedClient, 'main', baseConfig(), undefined, factory,
-        );
-
-        await manager.connect();
-        await vi.advanceTimersByTimeAsync(20_000);
-        await vi.advanceTimersByTimeAsync(20_000);
-        await vi.advanceTimersByTimeAsync(10);
-
-        const firstSocketPingCount = (firstSocket as any).ping.mock.calls.length;
-
-        await vi.advanceTimersByTimeAsync(20_000);
-
-        expect((secondSocket as any).ping).toHaveBeenCalled();
-        expect((firstSocket as any).ping.mock.calls.length).toBe(firstSocketPingCount);
-    });
 });

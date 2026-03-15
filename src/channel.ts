@@ -56,6 +56,7 @@ import type {
 import { ConnectionState } from "./types";
 import {
   cleanupOrphanedTempFiles,
+  createResolve4FallbackLookup,
   formatDingTalkConnectionErrorLog,
   formatDingTalkErrorPayloadLog,
   getCurrentTimestamp,
@@ -652,6 +653,10 @@ export const dingtalkPlugin: DingTalkChannelPlugin = {
           debug: config.debug || false,
           keepAlive: config.keepAlive ?? !useConnectionManager,
         });
+        (c as any).sslopts = {
+          ...(c as any).sslopts,
+          lookup: createResolve4FallbackLookup(ctx.log, account.accountId),
+        };
 
         instrumentConnectionStages(c);
 
