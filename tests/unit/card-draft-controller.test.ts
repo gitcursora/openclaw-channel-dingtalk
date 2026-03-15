@@ -243,4 +243,61 @@ describe("card-draft-controller", () => {
         await waitDone;
         expect(inFlightDone).toBe(true);
     });
+
+    it("answerPrefix: dramatic length drop (>50%) prepends previous content", async () => {
+        const card = makeCard();
+        const ctrl = createCardDraftController({ card, throttleMs: 0 });
+
+        ctrl.updateAnswer("long answer text here");
+        await vi.advanceTimersByTimeAsync(0);
+        streamAICardMock.mockClear();
+
+        ctrl.updateAnswer("Hi");
+        await vi.advanceTimersByTimeAsync(0);
+
+        expect(streamAICardMock).toHaveBeenCalledWith(
+            card,
+            "long answer text here\n\nHi",
+            false,
+            undefined,
+        );
+    });
+
+    it("answerPrefix: minor length drop (<50%) does NOT trigger prefix", async () => {
+        const card = makeCard();
+        const ctrl = createCardDraftController({ card, throttleMs: 0 });
+
+        ctrl.updateAnswer("abcdefghij");
+        await vi.advanceTimersByTimeAsync(0);
+        streamAICardMock.mockClear();
+
+        ctrl.updateAnswer("abcdefg");
+        await vi.advanceTimersByTimeAsync(0);
+
+        expect(streamAICardMock).toHaveBeenCalledWith(
+            card,
+            "abcdefg",
+            false,
+            undefined,
+        );
+    });
+
+    it("answerPrefix: exactly 50% length does NOT trigger prefix", async () => {
+        const card = makeCard();
+        const ctrl = createCardDraftController({ card, throttleMs: 0 });
+
+        ctrl.updateAnswer("abcdefghij");
+        await vi.advanceTimersByTimeAsync(0);
+        streamAICardMock.mockClear();
+
+        ctrl.updateAnswer("abcde");
+        await vi.advanceTimersByTimeAsync(0);
+
+        expect(streamAICardMock).toHaveBeenCalledWith(
+            card,
+            "abcde",
+            false,
+            undefined,
+        );
+    });
 });
