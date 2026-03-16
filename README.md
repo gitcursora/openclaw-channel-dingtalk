@@ -417,7 +417,7 @@ openclaw gateway restart
 | `learningNoteTtlMs`     | number   | `21600000`   | 会话级学习笔记有效期（毫秒）                |
 | `mediaUrlAllowlist`     | string[] | `[]`         | 允许通过 `mediaUrl` 下载的主机/IP/CIDR 白名单 |
 | `journalTTLDays`        | number   | `7`          | `originalMsgId` 文本回溯日志的保留天数      |
-| `ackReaction`          | string   | -            | 官方 `ackReaction` 配置入口；设为 `""` 可关闭 |
+| `ackReaction`          | string   | -            | 官方 `ackReaction` 配置入口；设为 `""` 可关闭；设为 `"emoji"` 时按输入语气自动选表情 |
 | `messageType`           | string   | `"markdown"` | 消息类型：markdown/card                     |
 | `cardTemplateId`        | string   |              | AI 互动卡片模板 ID（仅当 messageType=card） |
 | `cardTemplateKey`       | string   | `"content"`  | 卡片模板内容字段键（仅当 messageType=card） |
@@ -443,6 +443,7 @@ openclaw gateway restart
 - 该反馈作用于用户原消息，不会额外发送一条“思考中”消息
 - 解析顺序与官方一致：`channels.dingtalk.accounts.<accountId>.ackReaction` -> `channels.dingtalk.ackReaction` -> `messages.ackReaction` -> `agents.list[].identity.emoji`
 - 若上述路径都未配置，则不发送 ack reaction
+- 当最终解析值为 `emoji` 时，钉钉插件会按当前输入语气自动选择一条颜文字 reaction
 - 当前钉钉实现底层走 `emotion/reply` / `emotion/recall`，会把解析出的 `ackReaction` 文本原样写入 `emotionName` / `textEmotion.emotionName`
 - 若配置值为 `🤔思考中`，效果与钉钉原生“思考中”反馈一致；配置为其他文本时，会按该文本发送对应的 ack reaction
 
