@@ -99,7 +99,7 @@ describe('message payload transform', () => {
 
         expect(request.data.markdown).toEqual({
             title: '报表',
-            text: '# 报表\n姓名 | 分数\n张三 | 90',
+            text: '# 报表\n姓名 | 分数  \n张三 | 90',
         });
     });
 
@@ -118,7 +118,26 @@ describe('message payload transform', () => {
         expect(request.data.msgKey).toBe('sampleMarkdown');
         expect(JSON.parse(request.data.msgParam)).toEqual({
             title: '周报',
-            text: '# 周报\n项目 | 状态\nPR-295 | 处理中',
+            text: '# 周报\n项目 | 状态  \nPR-295 | 处理中',
+        });
+    });
+
+    it('preserves markdown tables when convertMarkdownTables is false', async () => {
+        mockedAxios.mockResolvedValue({ data: { success: true } });
+        const noConvertConfig = { ...config, convertMarkdownTables: false } as DingTalkConfig;
+        const tableText = '# 报表\n| 姓名 | 分数 |\n| --- | --- |\n| 张三 | 90 |';
+
+        await sendBySession(noConvertConfig, 'https://example-session-webhook', tableText, {
+            useMarkdown: true,
+        });
+
+        const request = mockedAxios.mock.calls[0]?.[0] as {
+            data: { markdown?: { title: string; text: string } };
+        };
+
+        expect(request.data.markdown).toEqual({
+            title: '报表',
+            text: '# 报表\n| 姓名 | 分数 |\n| --- | --- |\n| 张三 | 90 |',
         });
     });
 
