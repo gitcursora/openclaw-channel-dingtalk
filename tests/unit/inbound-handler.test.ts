@@ -2989,6 +2989,49 @@ describe('inbound-handler', () => {
         expect(sentTexts.some((text: string) => text.includes('思考中'))).toBe(false);
     });
 
+    it('handleDingTalkMessage does not recall when native ack reaction attach fails', async () => {
+        vi.useFakeTimers();
+        mockedAxiosPost.mockRejectedValueOnce(new Error('reaction failed'));
+
+        try {
+            await expect(handleDingTalkMessage({
+                cfg: {},
+                accountId: 'main',
+                sessionWebhook: 'https://session.webhook',
+                log: undefined,
+                dingtalkConfig: {
+                    clientId: 'ding_client',
+                    clientSecret: 'secret',
+                    dmPolicy: 'open',
+                    messageType: 'markdown',
+                    ackReaction: '🤔思考中',
+                } as any,
+                data: {
+                    msgId: 'm5_reaction_fail_no_recall',
+                    msgtype: 'text',
+                    text: { content: 'hello' },
+                    conversationType: '1',
+                    conversationId: 'cid_ok',
+                    senderId: 'user_1',
+                    chatbotUserId: 'bot_1',
+                    sessionWebhook: 'https://session.webhook',
+                    createAt: Date.now(),
+                },
+            } as any)).resolves.toBeUndefined();
+
+            await vi.advanceTimersByTimeAsync(6000);
+
+            expect(mockedAxiosPost).toHaveBeenCalledTimes(1);
+            expect(mockedAxiosPost).toHaveBeenCalledWith(
+                'https://api.dingtalk.com/v1.0/robot/emotion/reply',
+                expect.any(Object),
+                expect.any(Object),
+            );
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
     it('handleDingTalkMessage does not fall back to standalone thinking message when reaction attach fails', async () => {
         mockedAxiosPost.mockRejectedValueOnce(new Error('reaction failed'));
 
