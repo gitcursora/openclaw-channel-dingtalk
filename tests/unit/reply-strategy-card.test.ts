@@ -138,6 +138,32 @@ describe("reply-strategy-card", () => {
             expect(sendMessageMock).not.toHaveBeenCalled();
         });
 
+        it("deliver(tool) throws when sendMessage returns not ok", async () => {
+            const card = makeCard();
+            sendMessageMock.mockResolvedValueOnce({ ok: false, error: "tool send failed" });
+            const strategy = createCardReplyStrategy(buildCtx(card));
+            await expect(
+                strategy.deliver({ text: "tool output", mediaUrls: [], kind: "tool" }),
+            ).rejects.toThrow("tool send failed");
+        });
+
+        it("deliver(tool) skips when tool text is empty after formatting", async () => {
+            const card = makeCard();
+            const strategy = createCardReplyStrategy(buildCtx(card));
+            // undefined text → formatContentForCard returns ""
+            await strategy.deliver({ text: undefined, mediaUrls: [], kind: "tool" });
+            expect(sendMessageMock).not.toHaveBeenCalled();
+        });
+
+        it("deliver(block) delivers media but ignores text", async () => {
+            const deliverMedia = vi.fn();
+            const card = makeCard();
+            const strategy = createCardReplyStrategy(buildCtx(card, { deliverMedia }));
+            await strategy.deliver({ text: "ignored", mediaUrls: ["/tmp/file.pdf"], kind: "block" });
+            expect(deliverMedia).toHaveBeenCalledWith(["/tmp/file.pdf"]);
+            expect(sendMessageMock).not.toHaveBeenCalled();
+        });
+
         it("deliver(final) with empty text still falls through for card finalize", async () => {
             const card = makeCard();
             const strategy = createCardReplyStrategy(buildCtx(card));
@@ -185,6 +211,47 @@ describe("reply-strategy-card", () => {
             await strategy.deliver({ text: "text", mediaUrls: [], kind: "final" });
             await strategy.finalize();
             expect(card.state).toBe(AICardStatus.FAILED);
+        });
+
+        it("logs error payload when finishAICard throws with response data", async () => {
+            const card = makeCard();
+            const log = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+            finishAICardMock.mockRejectedValueOnce({
+                message: "finalize failed",
+                response: { data: { code: "invalidParameter", message: "bad param" } },
+            });
+            const strategy = createCardReplyStrategy(buildCtx(card, { log: log as any }));
+            await strategy.deliver({ text: "text", mediaUrls: [], kind: "final" });
+            await strategy.finalize();
+            expect(card.state).toBe(AICardStatus.FAILED);
+            const debugLogs = log.debug.mock.calls.map((args: unknown[]) => String(args[0]));
+            expect(debugLogs.some((msg) => msg.includes("[ErrorPayload][inbound.cardFinalize]"))).toBe(true);
+        });
+
+        it("sends markdown fallback via forceMarkdown when card FAILED and no sessionWebhook", async () => {
+            const card = makeCard({ state: AICardStatus.FAILED, lastStreamedContent: "partial content" });
+            const strategy = createCardReplyStrategy(buildCtx(card, { sessionWebhook: "" }));
+            await strategy.deliver({ text: "full text", mediaUrls: [], kind: "final" });
+            await strategy.finalize();
+            expect(sendMessageMock).toHaveBeenCalledTimes(1);
+            expect(sendMessageMock.mock.calls[0][3]).toMatchObject({ forceMarkdown: true });
+        });
+
+        it("throws when markdown fallback sendMessage returns not ok", async () => {
+            const card = makeCard({ state: AICardStatus.FAILED, lastStreamedContent: "partial" });
+            sendMessageMock.mockResolvedValueOnce({ ok: false, error: "fallback failed" });
+            const strategy = createCardReplyStrategy(buildCtx(card));
+            await strategy.deliver({ text: "text", mediaUrls: [], kind: "final" });
+            await expect(strategy.finalize()).rejects.toThrow("fallback failed");
+        });
+
+        it("does nothing when card FAILED and no fallback text available", async () => {
+            const card = makeCard({ state: AICardStatus.FAILED });
+            const strategy = createCardReplyStrategy(buildCtx(card));
+            // No deliver(final), no lastStreamedContent
+            await strategy.finalize();
+            expect(sendMessageMock).not.toHaveBeenCalled();
+            expect(finishAICardMock).not.toHaveBeenCalled();
         });
 
         it("uses fallback Done text when no content is available", async () => {
