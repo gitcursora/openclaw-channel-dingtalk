@@ -141,11 +141,16 @@ export function withDynamicReaction(
 
     async finalize(): Promise<void> {
       dispose();
+      // Wait for any in-flight reaction update to complete before inner.finalize(),
+      // otherwise the ack reaction recall in the finally block may race with
+      // an ongoing onRecallReaction from the update chain.
+      await updateChain.catch(() => undefined);
       await inner.finalize();
     },
 
     async abort(error: Error): Promise<void> {
       dispose();
+      await updateChain.catch(() => undefined);
       await inner.abort(error);
     },
 
