@@ -58,7 +58,9 @@ export function createCardReplyStrategy(
 
       // Empty-payload guard — card final is an exception (e.g. file-only response).
       if ((typeof textToSend !== "string" || textToSend.length === 0) && payload.mediaUrls.length === 0) {
-        if (payload.kind !== "final") return;
+        if (payload.kind !== "final") {
+          return;
+        }
       }
 
       // ---- final: defer to finalize, just save text ----
@@ -171,10 +173,11 @@ export function createCardReplyStrategy(
           `preview="${finalText.slice(0, 120)}"`,
         );
         await finishAICard(card, finalText, log);
-      } catch (err: any) {
-        log?.debug?.(`[DingTalk] AI Card finalization failed: ${err.message}`);
-        if (err?.response?.data !== undefined) {
-          log?.debug?.(formatDingTalkErrorPayloadLog("inbound.cardFinalize", err.response.data));
+      } catch (err: unknown) {
+        log?.debug?.(`[DingTalk] AI Card finalization failed: ${(err as Error).message}`);
+        const errObj = err as { response?: { data?: unknown } };
+        if (errObj?.response?.data !== undefined) {
+          log?.debug?.(formatDingTalkErrorPayloadLog("inbound.cardFinalize", errObj.response.data));
         }
         if ((card.state as string) !== AICardStatus.FINISHED) {
           card.state = AICardStatus.FAILED;
@@ -183,14 +186,14 @@ export function createCardReplyStrategy(
       }
     },
 
-    async abort(error: Error): Promise<void> {
+    async abort(_error: Error): Promise<void> {
       if (!isCardInTerminalState(card.state)) {
         controller.stop();
         await controller.waitForInFlight();
         try {
           await finishAICard(card, "❌ 处理失败", log);
-        } catch (cardCloseErr: any) {
-          log?.debug?.(`[DingTalk] Failed to finalize card after dispatch error: ${cardCloseErr.message}`);
+        } catch (cardCloseErr: unknown) {
+          log?.debug?.(`[DingTalk] Failed to finalize card after dispatch error: ${(cardCloseErr as Error).message}`);
           card.state = AICardStatus.FAILED;
           card.lastUpdated = Date.now();
         }

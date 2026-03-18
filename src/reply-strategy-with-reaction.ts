@@ -93,7 +93,9 @@ export function withDynamicReaction(
   let updateChain: Promise<void> = Promise.resolve();
 
   const switchReaction = async (nextReaction: string) => {
-    if (disposed || nextReaction === currentReaction) return;
+    if (disposed || nextReaction === currentReaction) {
+      return;
+    }
     const prev = currentReaction;
     await params.onRecallReaction(prev);
     const ok = await params.onAttachReaction(nextReaction);
@@ -107,16 +109,22 @@ export function withDynamicReaction(
   const queueSwitch = (nextReaction: string) => {
     updateChain = updateChain
       .then(() => switchReaction(nextReaction))
-      .catch((err: any) => {
-        log?.warn?.(`[DingTalk] Dynamic reaction update failed: ${err.message}`);
+      .catch((err: unknown) => {
+        log?.warn?.(`[DingTalk] Dynamic reaction update failed: ${(err as Error).message}`);
       });
   };
 
   const handleEvent = (event: unknown) => {
-    if (disposed) return;
-    if (!params.sessionFilter(event)) return;
+    if (disposed) {
+      return;
+    }
+    if (!params.sessionFilter(event)) {
+      return;
+    }
     const toolEvent = event as { stream?: string; data?: { phase?: string; name?: string } };
-    if (toolEvent?.stream !== "tool" || toolEvent?.data?.phase !== "start") return;
+    if (toolEvent?.stream !== "tool" || toolEvent?.data?.phase !== "start") {
+      return;
+    }
     lastEventAt = Date.now();
     queueSwitch(resolveToolReactionEmoji(toolEvent.data?.name));
   };
@@ -124,14 +132,18 @@ export function withDynamicReaction(
   const unsubscribe = params.subscribeAgentEvents(handleEvent);
 
   heartbeatTimer = setInterval(() => {
-    if (disposed || lastEventAt === 0) return;
+    if (disposed || lastEventAt === 0) {
+      return;
+    }
     if (Date.now() - lastEventAt >= TOOL_REACTION_SILENCE_MS) {
       queueSwitch(TOOL_HEARTBEAT_REACTION);
     }
   }, TOOL_HEARTBEAT_INTERVAL_MS);
 
   const dispose = async () => {
-    if (disposed) return;
+    if (disposed) {
+      return;
+    }
     disposed = true;
     unsubscribe();
     if (heartbeatTimer) {
@@ -146,8 +158,8 @@ export function withDynamicReaction(
       try {
         await params.onRecallReaction(currentReaction);
         params.onReactionDisposed?.();
-      } catch (err: any) {
-        log?.warn?.(`[DingTalk] Failed to recall reaction on dispose: ${err.message}`);
+      } catch (err: unknown) {
+        log?.warn?.(`[DingTalk] Failed to recall reaction on dispose: ${(err as Error).message}`);
       }
     }
   };
@@ -166,9 +178,9 @@ export function withDynamicReaction(
       await inner.finalize();
     },
 
-    async abort(error: Error): Promise<void> {
+    async abort(_error: Error): Promise<void> {
       await dispose();
-      await inner.abort(error);
+      await inner.abort(_error);
     },
 
     getFinalText(): string | undefined {
