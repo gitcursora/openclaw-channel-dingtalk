@@ -290,7 +290,7 @@ export function extractMessageContent(data: DingTalkInboundMessage): MessageCont
   const quoted = formatQuotedContent();
 
   if (msgtype === "text") {
-    const textContent = quotedPrefix + (data.text?.content?.trim() || "");
+    const textContent = data.text?.content?.trim() || "";
 
     // Strip quoted prefix before extracting @mentions to avoid matching @names inside quotes.
     const textForAtExtraction = textContent.replace(/^\[引用[^\]]*\]\s*/, "");

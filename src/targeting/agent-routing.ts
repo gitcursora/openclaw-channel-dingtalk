@@ -61,7 +61,7 @@ export function buildAgentSessionKey(params: {
  * breakage and prompt injection.
  */
 function sanitizeAgentName(name: string): string {
-  return name.replace(/[\[\]\r\n]/g, "").trim();
+  return name.replace(/[[\]\r\n]/g, "").trim();
 }
 
 /**

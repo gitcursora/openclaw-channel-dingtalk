@@ -207,7 +207,7 @@ export async function downloadMedia(
     try {
       return JSON.stringify(maskSensitiveData(value));
     } catch {
-      return String(value);
+      return `[unstringifiable ${typeof value}]`;
     }
   };
 
