@@ -935,6 +935,18 @@ export async function handleDingTalkMessage(params: HandleDingTalkMessageParams)
       `msgId=${data.msgId} originalMsgId=${data.originalMsgId || "(none)"}`,
     );
   }
+  if (quotedRef) {
+    log?.debug?.(
+      `[DingTalk][QuotedRef] Built inbound quotedRef msgId=${data.msgId} scope=${groupId} ` +
+      `quotedRef=${JSON.stringify(quotedRef)}`,
+    );
+  } else if (data.text?.isReplyMsg || data.originalMsgId || data.originalProcessQueryKey || content.quoted) {
+    log?.debug?.(
+      `[DingTalk][QuotedRef] Reply metadata present without resolvable quotedRef ` +
+      `msgId=${data.msgId} scope=${groupId} originalMsgId=${data.originalMsgId || "(none)"} ` +
+      `originalProcessQueryKey=${data.originalProcessQueryKey || "(none)"}`,
+    );
+  }
 
   try {
     upsertInboundMessageContext({
@@ -1032,11 +1044,13 @@ export async function handleDingTalkMessage(params: HandleDingTalkMessageParams)
     accountId,
     conversationId: data.conversationId,
     quotedRef,
+    log,
   });
 
   // Try downloading a quoted file from cached downloadCode/spaceId+fileId.
   const tryDownloadFromRecord = async (
     record: {
+      msgId?: string;
       media?: {
         downloadCode?: string;
         spaceId?: string;
@@ -1050,6 +1064,12 @@ export async function handleDingTalkMessage(params: HandleDingTalkMessageParams)
     let media: MediaFile | null = null;
     if (record.media.downloadCode) {
       media = await downloadMedia(dingtalkConfig, record.media.downloadCode, log);
+      if (media) {
+        log?.debug?.(
+          `[DingTalk][QuotedRef] Recovered quoted media from cached downloadCode ` +
+          `recordMsgId=${record.msgId || "(none)"} scope=${data.conversationId}`,
+        );
+      }
     }
     if (!media && record.media.spaceId && record.media.fileId && data.senderStaffId) {
       try {
@@ -1061,6 +1081,12 @@ export async function handleDingTalkMessage(params: HandleDingTalkMessageParams)
           unionId,
           log,
         );
+        if (media) {
+          log?.debug?.(
+            `[DingTalk][QuotedRef] Recovered quoted media from cached spaceId/fileId ` +
+            `recordMsgId=${record.msgId || "(none)"} scope=${data.conversationId}`,
+          );
+        }
       } catch (err: any) {
         log?.warn?.(`[DingTalk] spaceId+fileId fallback failed: ${err.message}`);
       }
@@ -1074,6 +1100,11 @@ export async function handleDingTalkMessage(params: HandleDingTalkMessageParams)
       (await tryDownloadFromRecord(quotedRecord)) ||
       (await downloadMedia(dingtalkConfig, content.quoted.mediaDownloadCode, log));
     if (media) {
+      if (!quotedRecord) {
+        log?.debug?.(
+          `[DingTalk][QuotedRef] Recovered quoted image from inbound downloadCode fallback scope=${data.conversationId}`,
+        );
+      }
       mediaPath = media.path;
       mediaType = media.mimeType;
     } else {
@@ -1108,6 +1139,10 @@ export async function handleDingTalkMessage(params: HandleDingTalkMessageParams)
         mediaPath = resolved.media.path;
         mediaType = resolved.media.mimeType;
         fileResolved = true;
+        log?.debug?.(
+          `[DingTalk][QuotedRef] Recovered quoted file from group file fallback ` +
+          `scope=${data.conversationId} quotedMsgId=${content.quoted.msgId || "(none)"}`,
+        );
         if (content.quoted.msgId) {
           upsertInboundMessageContext({
             storePath: accountStorePath,
@@ -1167,6 +1202,10 @@ export async function handleDingTalkMessage(params: HandleDingTalkMessageParams)
         mediaPath = resolved.media.path;
         mediaType = resolved.media.mimeType;
         docResolved = true;
+        log?.debug?.(
+          `[DingTalk][QuotedRef] Recovered quoted doc card from group file fallback ` +
+          `scope=${data.conversationId} quotedMsgId=${content.quoted.msgId || "(none)"}`,
+        );
         if (content.quoted.msgId) {
           upsertInboundMessageContext({
             storePath: accountStorePath,

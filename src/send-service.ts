@@ -77,6 +77,7 @@ function persistOutboundMessageContext(params: {
   messageType?: string;
   createdAt?: number;
   quotedRef?: QuotedRef;
+  log?: Logger;
   delivery: {
     messageId?: string;
     processQueryKey?: string;
@@ -88,6 +89,11 @@ function persistOutboundMessageContext(params: {
   if (!params.storePath || !params.accountId) {
     return;
   }
+  params.log?.debug?.(
+    `[DingTalk][QuotedRef][Persist] direction=outbound scope=${params.conversationId} ` +
+    `messageType=${params.messageType || "(none)"} processQueryKey=${params.delivery.processQueryKey || "(none)"} ` +
+    `messageId=${params.delivery.messageId || "(none)"} quotedRef=${params.quotedRef ? JSON.stringify(params.quotedRef) : "(none)"}`,
+  );
   upsertOutboundMessageContext({
     storePath: params.storePath,
     accountId: params.accountId,
@@ -412,6 +418,7 @@ export async function sendProactiveMedia(
       text: `[media:${mediaType}] ${mediaPath}`,
       messageType: "outbound-proactive-media",
       quotedRef: options.quotedRef,
+      log,
       delivery: {
         ...delivery,
         kind: "proactive-media",
@@ -469,6 +476,7 @@ export async function sendProactiveMedia(
       text: fallbackPersistedText,
       messageType: "outbound-proactive-fallback",
       quotedRef: options.quotedRef,
+      log,
       delivery: {
         ...fallbackDelivery,
         kind: isTrackingResult(fallback as ProactiveTextSendResult) ? "proactive-card" : "proactive-text",
@@ -613,6 +621,7 @@ export async function sendMessage(
         text: persistedText,
         messageType: options.mediaPath && options.mediaType ? "outbound-media" : "outbound",
         quotedRef: options.quotedRef,
+        log,
         delivery: {
           ...delivery,
           kind: "session",
@@ -631,6 +640,7 @@ export async function sendMessage(
       text,
       messageType: "outbound-proactive",
       quotedRef: options.quotedRef,
+      log,
       delivery: {
         ...delivery,
         kind: isTrackingResult(result) ? "proactive-card" : "proactive-text",

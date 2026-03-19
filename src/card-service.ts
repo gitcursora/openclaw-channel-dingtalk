@@ -859,6 +859,7 @@ export async function finishAICard(
       content,
       card.storePath,
       options.quotedRef,
+      log,
     );
     if (primaryConversationId !== card.conversationId) {
       cacheCardContentByProcessQueryKey(
@@ -868,6 +869,7 @@ export async function finishAICard(
         content,
         card.storePath,
         options.quotedRef,
+        log,
       );
     }
   }
@@ -880,10 +882,15 @@ function cacheCardContentByProcessQueryKey(
   content: string,
   storePath?: string,
   quotedRef?: QuotedRef,
+  log?: Logger,
 ): void {
   if (!processQueryKey.trim() || !content.trim() || !storePath) {
     return;
   }
+  log?.debug?.(
+    `[DingTalk][QuotedRef][Persist] direction=outbound scope=${conversationId} messageType=card ` +
+    `processQueryKey=${processQueryKey} quotedRef=${quotedRef ? JSON.stringify(quotedRef) : "(none)"}`,
+  );
   upsertOutboundMessageContext({
     storePath,
     accountId,

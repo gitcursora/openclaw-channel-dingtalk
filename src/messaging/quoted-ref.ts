@@ -2,7 +2,7 @@ import {
   resolveByQuotedRef,
   type MessageRecord,
 } from "../message-context-store";
-import type { DingTalkInboundMessage, MessageContent, QuotedRef } from "../types";
+import type { DingTalkInboundMessage, Logger, MessageContent, QuotedRef } from "../types";
 
 function firstTrimmedString(...candidates: Array<string | undefined>): string | undefined {
   for (const candidate of candidates) {
@@ -82,6 +82,7 @@ export function resolveQuotedRecord(params: {
   accountId: string;
   conversationId: string | null;
   quotedRef?: QuotedRef;
+  log?: Logger;
 }): MessageRecord | null {
   if (!params.quotedRef) {
     return null;
@@ -91,5 +92,6 @@ export function resolveQuotedRecord(params: {
     accountId: params.accountId,
     conversationId: params.conversationId,
     quotedRef: params.quotedRef,
+    log: params.log,
   });
 }

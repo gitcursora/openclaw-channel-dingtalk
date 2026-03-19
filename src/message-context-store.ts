@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { readNamespaceJson, writeNamespaceJsonAtomic } from "./persistence-store";
-import type { QuotedRef } from "./types";
+import type { Logger, QuotedRef } from "./types";
 
 const MESSAGE_CONTEXT_NAMESPACE = "messages.context";
 const MESSAGE_CONTEXT_VERSION = 1;
@@ -610,22 +610,33 @@ export function resolveByAlias(
 }
 
 export function resolveByQuotedRef(
-  params: ScopeParams & { quotedRef: QuotedRef; nowMs?: number },
+  params: ScopeParams & { quotedRef: QuotedRef; nowMs?: number; log?: Logger },
 ): MessageRecord | null {
   const nowMs = params.nowMs ?? Date.now();
   const quotedRef = normalizeQuotedRef(params.quotedRef);
+  const log = params.log;
   if (!quotedRef) {
+    log?.debug?.(
+      `[DingTalk][QuotedRef] Resolve skipped: invalid quotedRef accountId=${params.accountId} conversationId=${params.conversationId || "(none)"}`,
+    );
     return null;
   }
   if (quotedRef.targetDirection === "inbound") {
     if (quotedRef.key !== "msgId" || !quotedRef.value) {
+      log?.debug?.(
+        `[DingTalk][QuotedRef] Resolve skipped: inbound quotedRef missing msgId accountId=${params.accountId} conversationId=${params.conversationId || "(none)"}`,
+      );
       return null;
     }
-    return resolveByMsgId({
+    const record = resolveByMsgId({
       ...params,
       msgId: quotedRef.value,
       nowMs,
     });
+    log?.debug?.(
+      `[DingTalk][QuotedRef] Resolve inbound by msgId=${quotedRef.value} hit=${record ? "yes" : "no"} accountId=${params.accountId} conversationId=${params.conversationId || "(none)"}`,
+    );
+    return record;
   }
   if (quotedRef.key && quotedRef.value && quotedRef.key !== "msgId") {
     const aliasRecord = resolveByAlias({
@@ -635,17 +646,30 @@ export function resolveByQuotedRef(
       nowMs,
     });
     if (aliasRecord) {
+      log?.debug?.(
+        `[DingTalk][QuotedRef] Resolve outbound by ${quotedRef.key}=${quotedRef.value} hit=yes accountId=${params.accountId} conversationId=${params.conversationId || "(none)"}`,
+      );
       return aliasRecord;
     }
+    log?.debug?.(
+      `[DingTalk][QuotedRef] Resolve outbound by ${quotedRef.key}=${quotedRef.value} hit=no accountId=${params.accountId} conversationId=${params.conversationId || "(none)"}`,
+    );
   }
   if (typeof quotedRef.fallbackCreatedAt === "number" && Number.isFinite(quotedRef.fallbackCreatedAt)) {
-    return resolveByCreatedAtWindow({
+    const record = resolveByCreatedAtWindow({
       ...params,
       createdAt: quotedRef.fallbackCreatedAt,
       direction: "outbound",
       nowMs,
     });
+    log?.debug?.(
+      `[DingTalk][QuotedRef] Resolve outbound by createdAt=${quotedRef.fallbackCreatedAt} hit=${record ? "yes" : "no"} accountId=${params.accountId} conversationId=${params.conversationId || "(none)"}`,
+    );
+    return record;
   }
+  log?.debug?.(
+    `[DingTalk][QuotedRef] Resolve outbound missed without createdAt fallback accountId=${params.accountId} conversationId=${params.conversationId || "(none)"}`,
+  );
   return null;
 }
 
