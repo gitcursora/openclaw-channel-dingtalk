@@ -251,7 +251,7 @@ export function extractMessageContent(data: DingTalkInboundMessage): MessageCont
 
       // No msgType — backward compat: extract text or richText from content.
       if (content?.text?.trim()) {
-        return repliedMsg.msgId ? { msgId: repliedMsg.msgId } : {};
+        return repliedMsg.msgId ? { msgId: repliedMsg.msgId } : null;
       }
 
       if (content?.richText && Array.isArray(content.richText)) {

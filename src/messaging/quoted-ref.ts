@@ -45,7 +45,6 @@ export function buildInboundQuotedRef(
         key: "processQueryKey",
         value: processQueryKey,
         fallbackCreatedAt,
-        fallbackMsgId: repliedMsgId,
       };
     }
     if (!fallbackCreatedAt && !repliedMsgId) {
@@ -54,7 +53,6 @@ export function buildInboundQuotedRef(
     return {
       targetDirection: "outbound",
       fallbackCreatedAt,
-      fallbackMsgId: repliedMsgId,
     };
   }
   if (!repliedMsgId) {

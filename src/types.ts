@@ -284,7 +284,6 @@ export interface QuotedRef {
   key?: QuotedRefKey;
   value?: string;
   fallbackCreatedAt?: number;
-  fallbackMsgId?: string;
 }
 
 /**

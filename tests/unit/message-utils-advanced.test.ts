@@ -39,6 +39,22 @@ describe('message-utils advanced extraction', () => {
         expect(modern.quoted).toBeUndefined();
     });
 
+    it('does not expose an empty quoted object when replied text has no usable metadata', () => {
+        const result = extractMessageContent({
+            msgtype: 'text',
+            text: {
+                content: '当前消息',
+                isReplyMsg: true,
+                repliedMsg: {
+                    content: { text: '旧引用正文' },
+                },
+            },
+        } as any);
+
+        expect(result.text).toBe('当前消息');
+        expect(result.quoted).toBeUndefined();
+    });
+
     it('falls back for unknown msgtype', () => {
         const result = extractMessageContent({ msgtype: 'unknownType', text: { content: '' } } as any);
         expect(result.text).toBe('[unknownType消息]');

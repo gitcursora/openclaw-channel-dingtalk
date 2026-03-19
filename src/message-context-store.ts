@@ -157,14 +157,10 @@ function normalizeQuotedRef(value: unknown): QuotedRef | undefined {
     typeof candidate.fallbackCreatedAt === "number" && Number.isFinite(candidate.fallbackCreatedAt)
       ? candidate.fallbackCreatedAt
       : undefined;
-  const fallbackMsgId =
-    typeof candidate.fallbackMsgId === "string" && candidate.fallbackMsgId.trim()
-      ? candidate.fallbackMsgId.trim()
-      : undefined;
   if (!targetDirection) {
     return undefined;
   }
-  if (!key && !fallbackCreatedAt && !fallbackMsgId) {
+  if (!key && !fallbackCreatedAt) {
     return undefined;
   }
   if (key && !valueString) {
@@ -175,7 +171,6 @@ function normalizeQuotedRef(value: unknown): QuotedRef | undefined {
     key,
     value: valueString,
     fallbackCreatedAt,
-    fallbackMsgId,
   };
 }
 
@@ -387,7 +382,6 @@ function mergeQuotedRef(existing: QuotedRef | undefined, next: QuotedRef | undef
     key: next.key || existing.key,
     value: next.value || existing.value,
     fallbackCreatedAt: next.fallbackCreatedAt ?? existing.fallbackCreatedAt,
-    fallbackMsgId: next.fallbackMsgId || existing.fallbackMsgId,
   };
 }
 
